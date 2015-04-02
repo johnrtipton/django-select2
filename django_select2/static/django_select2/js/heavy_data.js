@@ -6,7 +6,8 @@ if (!window['django_select2']) {
 												// since this can't be entered by user.
 		get_url_params: function (term, page, context) {
 			var field_id = jQuery(this).data('field_id'),
-				res = {
+                related_id = jQuery(this).data('related_id'),
+                res = {
 					'term': term,
 					'page': page,
 					'context': context
@@ -14,7 +15,10 @@ if (!window['django_select2']) {
 			if (field_id) {
 				res['field_id'] = field_id;
 			}
-			return res;
+            if (related_id) {
+                res['related_id'] = related_id;
+            }
+            return res;
 		},
 		process_results: function (data, page, context) {
 			var results;
