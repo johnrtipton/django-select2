@@ -479,7 +479,7 @@ class HeavySelect2Mixin(Select2Mixin):
             values = [value]
             texts = self.render_texts(values, choices)
             if texts:
-                return "$('#%s').txt(%s);" % (id_, texts)
+                return '$("#%s").txt(%s);' % (id_, texts)
 
     def render_inner_js_code(self, id_, name, value, attrs=None, choices=(), *args):
         js = '$(hashedSelector).change(django_select2.onValChange).data("userGetValText", null);'
@@ -562,7 +562,7 @@ class HeavySelect2MultipleWidget(HeavySelect2Mixin, MultipleSelect2HiddenInput):
         if value:
             texts = self.render_texts(value, choices)
             if texts:
-                return '$("#%s").txt(%s);' % (id_, texts)
+                return "$('#%s').txt(%s);" % (id_, texts)
 
 
 class HeavySelect2TagWidget(HeavySelect2MultipleWidget):
