@@ -8,7 +8,6 @@ import json
 import logging
 import re
 from itertools import chain
-from django_select2.media import get_select2_js_libs, get_select2_css_libs, get_select2_heavy_js_libs
 
 from django import forms
 from django.core.urlresolvers import reverse
@@ -17,6 +16,10 @@ from django.utils.datastructures import MergeDict, MultiValueDict
 from django.utils.encoding import force_text
 from django.utils.safestring import mark_safe
 from django.utils.six import text_type
+
+from django_select2.media import (get_select2_css_libs,
+                                  get_select2_heavy_js_libs,
+                                  get_select2_js_libs)
 
 from . import __RENDER_SELECT2_STATICS as RENDER_SELECT2_STATICS
 
@@ -82,9 +85,9 @@ class Select2Mixin(object):
 
             .. tip:: You cannot introduce new options using this. For that you should sub-class and override
                 :py:meth:`.init_options`. The reason for this is, few options are not compatible with each other
-                or are not applicable in some scenarios. For example, when Select2 is attached to ``<select>`` tag,
-                it can get if it is multiple or single valued from that tag itself. In this case if you specify
-                ``multiple`` option then not only it is useless but an error in Select2 JS' point of view.
+                or are not applicable in some scenarios. For example, when Select2 is attached to a ``<select>`` tag,
+                it can detect if it is being used with a single or multiple values from that tag itself. If you specified the
+                ``multiple`` option in this case, it would not only be useless but an error from Select2 JS' point of view.
 
                 There are other such intricacies, based on which some options are removed. By enforcing this
                 restriction we make sure to not break the code by passing some wrong concoction of options.
@@ -139,6 +142,8 @@ class Select2Mixin(object):
         options = dict(self.options)
         if options.get('allowClear', None) is not None:
             options['allowClear'] = not self.is_required
+        if options.get('placeholder'):
+            options['placeholder'] = force_text(options['placeholder'])
         return options
 
     def render_js_code(self, id_, *args):
@@ -181,22 +186,9 @@ class Select2Mixin(object):
         """
         options = json.dumps(self.get_options())
         options = options.replace('"*START*', '').replace('*END*"', '')
-        # selector variable must already be passed to this
-
-        fieldset_id = re.sub(r'-\d+-', '_', id_).replace('-', '_')
-        if '__prefix__' in id_:
-            return ''
-        else:
-            js = '''
-                  window.django_select2.%s = function (selector) {
-                    var hashedSelector = "#" + selector;
-                    $(hashedSelector).select2(%s);
-                  ''' % (fieldset_id, options)
-            js += '};'
-            js += 'django_select2.%s("%s");' % (fieldset_id, id_)
-            return js
-        #
-        # return '$(hashedSelector).select2(%s);' % (options)
+        js = 'var hashedSelector = "#" + "%s";' % id_
+        js += '$(hashedSelector).select2(%s);' % (options)
+        return js
 
     def render(self, name, value, attrs=None, choices=()):
         """
@@ -218,12 +210,23 @@ class Select2Mixin(object):
 
         return mark_safe(s)
 
-    class Media:
+    def _get_media(self):
+        """
+        Construct Media as a dynamic property
+
+        This is essential because we need to check RENDER_SELECT2_STATICS
+        before returning our assets.
+
+        for more information:
+        https://docs.djangoproject.com/en/1.8/topics/forms/media/#media-as-a-dynamic-property
+        """
         if RENDER_SELECT2_STATICS:
-            js = get_select2_js_libs()
-            css = {
-                'screen': get_select2_css_libs(light=True),
-            }
+            return forms.Media(
+                js=get_select2_js_libs(),
+                css={'screen': get_select2_css_libs(light=True)}
+            )
+        return forms.Media()
+    media = property(_get_media)
 
 
 class Select2Widget(Select2Mixin, forms.Select):
@@ -352,10 +355,10 @@ class HeavySelect2Mixin(Select2Mixin):
         :param data_url: Url which will respond to Ajax queries with JSON object.
         :type data_url: :py:obj:`str` or None
 
-        .. tip:: When ``data_view`` is provided then it is converted into Url using
+        .. tip:: When ``data_view`` is provided then it is converted into an URL using
             :py:func:`~django.core.urlresolvers.reverse`.
 
-        .. warning:: Either of ``data_view`` or ``data_url`` must be specified, else :py:exc:`ValueError` would
+        .. warning:: Either of ``data_view`` or ``data_url`` must be specified, otherwise :py:exc:`ValueError` will
             be raised.
 
         :param choices: The list of available choices. If not provided then empty list is used instead. It
@@ -489,12 +492,23 @@ class HeavySelect2Mixin(Select2Mixin):
         js += super(HeavySelect2Mixin, self).render_inner_js_code(id_, name, value, attrs, choices, *args)
         return js
 
-    class Media:
+    def _get_media(self):
+        """
+        Construct Media as a dynamic property
+
+        This is essential because we need to check RENDER_SELECT2_STATICS
+        before returning our assets.
+
+        for more information:
+        https://docs.djangoproject.com/en/1.8/topics/forms/media/#media-as-a-dynamic-property
+        """
         if RENDER_SELECT2_STATICS:
-            js = get_select2_heavy_js_libs()
-            css = {
-                'screen': get_select2_css_libs()
-            }
+            return forms.Media(
+                js=get_select2_heavy_js_libs(),
+                css={'screen': get_select2_css_libs()}
+            )
+        return forms.Media()
+    media = property(_get_media)
 
 
 class HeavySelect2Widget(HeavySelect2Mixin, forms.TextInput):
@@ -516,6 +530,22 @@ class HeavySelect2Widget(HeavySelect2Mixin, forms.TextInput):
         # , the final field will be displayed by javascript
         # and we want label and other layout elements.
         return False
+
+    def render_inner_js_code(self, id_, *args):
+        field_id = self.field_id if hasattr(self, 'field_id') else id_
+        fieldset_id = re.sub(r'-\d+-', '_', id_).replace('-', '_')
+        if '__prefix__' in id_:
+            return ''
+        else:
+            js = '''
+                  window.django_select2.%s = function (selector, fieldID) {
+                    var hashedSelector = "#" + selector;
+                    $(hashedSelector).data("field_id", fieldID);
+                  ''' % (fieldset_id)
+            js += super(HeavySelect2Widget, self).render_inner_js_code(id_, *args)
+            js += '};'
+            js += 'django_select2.%s("%s", "%s");' % (fieldset_id, id_, field_id)
+            return js
 
 
 class HeavySelect2MultipleWidget(HeavySelect2Mixin, MultipleSelect2HiddenInput):
@@ -564,6 +594,22 @@ class HeavySelect2MultipleWidget(HeavySelect2Mixin, MultipleSelect2HiddenInput):
             if texts:
                 return "$('#%s').txt(%s);" % (id_, texts)
 
+    def render_inner_js_code(self, id_, *args):
+        field_id = self.field_id if hasattr(self, 'field_id') else id_
+        fieldset_id = re.sub(r'-\d+-', '_', id_).replace('-', '_')
+        if '__prefix__' in id_:
+            return ''
+        else:
+            js = '''
+                  window.django_select2.%s = function (selector, fieldID) {
+                    var hashedSelector = "#" + selector;
+                    $(hashedSelector).data("field_id", fieldID);
+                  ''' % (fieldset_id)
+            js += super(HeavySelect2MultipleWidget, self).render_inner_js_code(id_, *args)
+            js += '};'
+            js += 'django_select2.%s("%s", "%s");' % (fieldset_id, id_, field_id)
+            return js
+
 
 class HeavySelect2TagWidget(HeavySelect2MultipleWidget):
     """
@@ -595,6 +641,7 @@ class HeavySelect2TagWidget(HeavySelect2MultipleWidget):
         self.options['createSearchChoice'] = '*START*django_select2.createSearchChoice*END*'
 
     def render_inner_js_code(self, id_, *args):
+        field_id = self.field_id if hasattr(self, 'field_id') else id_
         fieldset_id = re.sub(r'-\d+-', '_', id_).replace('-', '_')
         if '__prefix__' in id_:
             return ''
@@ -606,7 +653,7 @@ class HeavySelect2TagWidget(HeavySelect2MultipleWidget):
                   ''' % (fieldset_id)
             js += super(HeavySelect2TagWidget, self).render_inner_js_code(id_, *args)
             js += '};'
-            js += 'django_select2.%s("%s", "%s");' % (fieldset_id, id_, id_)
+            js += 'django_select2.%s("%s", "%s");' % (fieldset_id, id_, field_id)
             return js
 
 

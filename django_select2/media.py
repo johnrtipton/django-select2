@@ -3,7 +3,6 @@ from django.templatetags.static import static
 
 from . import __BOOTSTRAP as BOOTSTRAP
 
-
 # Local version of DEBUG
 DEBUG = settings.configured and settings.DEBUG
 
@@ -54,4 +53,4 @@ def get_select2_css_libs(light=False):
                 css_files = ('css/select2.min.css',)
             else:
                 css_files = ('css/all.min.css',)
-    return (django_select2_static(f) for f in css_files)
+    return [django_select2_static(f) for f in css_files]
